@@ -2,6 +2,7 @@ import csv
 from datetime import datetime, date
 
 from enum import Enum, auto
+from typing import List
 
 
 class CurveKey:
@@ -17,6 +18,43 @@ class CurveKey:
             return self.settlement_date == other.settlement_date and self.product == other.product
         return False
 
+    def __str__(self):
+        return f"{self.settlement_date}_{self.product}"
+
+
+class ForwardCurvePrice:
+    def __init__(self, instrument_id, curve_key: CurveKey, maturity_date: date, time_to_maturity, price: float):
+        self.instrument_id = instrument_id
+        self.curve_key = curve_key
+        self.maturity_date = maturity_date
+        self.time_to_maturity = time_to_maturity
+        self.price = price
+
+
+class PriceSeries:
+    def __init__(self, instrument_id: str, prices: [ForwardCurvePrice]):
+        self.instrument_id = instrument_id
+        self.prices = list(
+            sorted(prices, key=lambda item: item.curve_key.settlement_date)
+        )
+
+    def get_returns(self):
+        daily_returns: List[DailyReturn] = []
+        previous_price: ForwardCurvePrice = None
+        for price in self.prices:
+            if previous_price is None:
+                previous_price: ForwardCurvePrice = price
+                continue
+            daily_return: float = (price.price - previous_price.price) / previous_price.price
+            daily_returns.append(DailyReturn(price.curve_key.settlement_date, daily_return))
+        return daily_returns
+
+
+class DailyReturn:
+    def __init__(self, date_of_return: date, daily_return: float):
+        self.date_of_return = date_of_return
+        self.daily_return = daily_return
+
 
 class DayCountConvention(Enum):
     ACT_365 = 365
@@ -30,8 +68,8 @@ class InterpolationStrategy(Enum):
 
 
 class ProductType(Enum):
-    FUTURE = auto()
-    OPTION = auto()
+    FUTURE = "future"
+    OPTION = "option"
 
 
 class InstrumentDetails:
@@ -51,3 +89,4 @@ class InstrumentDetails:
         self.settlement_price = settlement_price
         self.maturity_date = datetime.strptime(maturity_date, "%Y%m%d").date()
         self.forward_curve_key = CurveKey(self.settlement_date, self.product)
+        self.instrument_id = f"{product}_{product_type.value}_{maturity_date}"

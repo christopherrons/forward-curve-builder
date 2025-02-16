@@ -1,101 +1,119 @@
 import os
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
+from typing import List, Dict
+
 import matplotlib.pyplot as plt
 import numpy as np
 
 from forward_curve import ForwardCurve, DayCountConvention, InterpolationStrategy, CurveKey
-from models import InstrumentDetails, ProductType
-from utils import read_csv_and_map_to_objects
-
-
-class HistoricalReturns:
-    def __init__(self, settlement_date: date, daily_return: float):
-        self.settlement_date = settlement_date
-        self.daily_return = daily_return
+from models import InstrumentDetails, PriceSeries, ForwardCurvePrice
+from utils import read_csv_and_map_to_objects, create_test_details
 
 
 def main():
+    directory: str = "examples/"
     instrument_details = []
-    for file in os.listdir("examples/"):
-        instrument_details: [InstrumentDetails] = instrument_details + read_csv_and_map_to_objects(file)
-    curves_by_key: {CurveKey, ForwardCurve} = build_curves(instrument_details)
-    test_historical_returns: [HistoricalReturns] = calculate_historical_returns(curves_by_key, create_test_details())
-    plot_curves(curves_by_key)
+    for file in os.listdir(directory):
+        instrument_details: [InstrumentDetails] = instrument_details + read_csv_and_map_to_objects(directory + file)
+
+    curves_by_key: Dict[CurveKey, ForwardCurve] = build_curves(instrument_details)
+    for curve in curves_by_key.values():
+        store_curve_plots(curve)
+
+    price_series: PriceSeries = calculate_price_series(curves_by_key, create_test_details())
+    store_price_plots(price_series)
+    store_return_plots(price_series)
 
 
-def build_curves(instrument_details: [InstrumentDetails]) -> {CurveKey, ForwardCurve}:
-    details_by_curve_key = group_instruments_by_key(instrument_details, key_func=lambda x: x.curve_key)
-    curve_by_key = defaultdict(list)
+def build_curves(instrument_details: List[InstrumentDetails]) -> Dict[CurveKey, ForwardCurve]:
+    details_by_curve_key: Dict[CurveKey, List[InstrumentDetails]] = group_instruments_by_key(instrument_details, key_func=lambda x: x.forward_curve_key)
+    curve_by_key: Dict[CurveKey, ForwardCurve] = defaultdict()
     for curve_key, details in details_by_curve_key.items():
         curve: ForwardCurve = ForwardCurve.create_from(curve_key, DayCountConvention.ACT_365, InterpolationStrategy.CUBIC_SPLINE, details)
-        curve_by_key[curve_key].append(curve)
+        curve_by_key[curve_key] = curve
+    sorted_by_values: Dict[CurveKey, ForwardCurve] = dict(
+        sorted(curve_by_key.items(), key=lambda item: item[0].settlement_date)
+    )
+
+    return sorted_by_values
 
 
-def group_instruments_by_key(instrument_details: [InstrumentDetails], key_func) -> {CurveKey, [InstrumentDetails]}:
-    grouped_dict = defaultdict(list)
+def group_instruments_by_key(instrument_details: List[InstrumentDetails], key_func) -> Dict[CurveKey, List[InstrumentDetails]]:
+    grouped_dict: Dict[CurveKey, List[InstrumentDetails]] = defaultdict(list)
     for details in instrument_details:
         grouped_dict[key_func(details)].append(details)
     return grouped_dict
 
 
-def calculate_historical_returns(curves_by_key: {CurveKey, ForwardCurve}, details: InstrumentDetails) -> [HistoricalReturns]:
-    historical_returns: [HistoricalReturns] = []
-    previous_curve: ForwardCurve = None
+def calculate_price_series(curves_by_key: Dict[CurveKey, ForwardCurve], details: InstrumentDetails) -> PriceSeries:
+    prices: List[ForwardCurvePrice] = []
     maturity_date: date = details.maturity_date
-
-    sorted_by_values: {CurveKey, ForwardCurve} = dict(
-        sorted(curves_by_key.items(), key=lambda item: item[0].settlement_date)
-    )
-
-    for curve_key, curve in sorted_by_values.items():
-        if previous_curve is None:
-            previous_curve = curve
+    for curve_key, curve in curves_by_key.items():
+        if curve_key.product != details.product:
             continue
+        time_to_maturity: float = curve.get_time_to_maturity(maturity_date, datetime.now().date())
+        price: float = curve.get_price(time_to_maturity)
+        prices.append(ForwardCurvePrice(details.instrument_id, curve_key, maturity_date, time_to_maturity, price))
 
-        previous_price: float = previous_curve.get_price_for_date(maturity_date)
-        current_price: float = curve.get_price_for_date(maturity_date)
-
-        if previous_price == 0:
-            daily_returns = 0.0
-        else:
-            daily_returns: float = (current_price - previous_price) / previous_price
-
-        historical_returns.append(HistoricalReturns(curve_key.settlement_date, daily_returns))
-        previous_curve: ForwardCurve = curve
-
-    return historical_returns
+    return PriceSeries(details.instrument_id, prices)
 
 
-def plot_curves(curves_by_key: {CurveKey, ForwardCurve}):
-    maturities: np.ndarray = np.linspace(0, 1, 100)
+def store_curve_plots(curve: ForwardCurve):
+    maturities: np.ndarray = np.linspace(curve.time_to_maturity[0], curve.time_to_maturity[-1], 100)
 
     plt.figure(figsize=(10, 6))
 
-    for curve_key, curve in curves_by_key.items():
-        prices: [float] = [curve.get_price(maturity) for maturity in maturities]
-
-        plt.plot(maturities, prices, label=str(curve_key))
+    prices: [float] = [curve.get_price(maturity) for maturity in maturities]
+    plt.plot(maturities, prices, label=str(curve.curve_key))
 
     plt.xlabel('Maturity')
     plt.ylabel('Price')
-    plt.title('Price vs Maturity for Different Curves')
+    plt.title(f'Price vs Maturity for Product {curve.curve_key.product}')
     plt.legend()
     plt.grid(True)
 
-    plt.show()
+    plt.savefig("plots/curves/curve_" + curve.curve_key.__str__() + ".png")
 
 
-def create_test_details() -> InstrumentDetails:
-    return InstrumentDetails(
-        "20250201",
-        "TEST",
-        "TEST",
-        ProductType.FUTURE,
-        "USD",
-        0,
-        "20250701"
-    )
+def store_price_plots(price_series: PriceSeries):
+    plt.figure(figsize=(10, 6))
+
+    dates: List[date] = []
+    prices: List[ForwardCurvePrice] = []
+    for price in price_series.prices:
+        dates.append(price.curve_key.settlement_date)
+        prices.append(price.price)
+
+    plt.plot(dates, prices, label=str(price_series.instrument_id))
+
+    plt.xlabel('Date')
+    plt.ylabel('Return %')
+    plt.title(f'Price vs Date for Product {price_series.instrument_id}')
+    plt.legend()
+    plt.grid(True)
+
+    plt.savefig("plots/prices/price_series_" + price_series.instrument_id.__str__() + ".png")
+
+
+def store_return_plots(price_series: PriceSeries):
+    plt.figure(figsize=(10, 6))
+
+    dates: List[date] = []
+    daily_returns: List[date] = []
+    for daily_return in price_series.get_returns():
+        dates.append(daily_return.date_of_return)
+        daily_returns.append(daily_return.daily_return * 100)
+
+    plt.plot(dates, daily_returns, label=str(price_series.instrument_id))
+
+    plt.xlabel('Date')
+    plt.ylabel('Return %')
+    plt.title(f'Returns vs Date for Product {price_series.instrument_id}')
+    plt.legend()
+    plt.grid(True)
+
+    plt.savefig("plots/returns/returns_" + price_series.instrument_id.__str__() + ".png")
 
 
 if __name__ == "__main__":

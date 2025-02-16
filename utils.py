@@ -28,3 +28,15 @@ def map_product_type(product_type_str) -> ProductType:
         return ProductType.OPTION
     else:
         raise ValueError(f"Unknown product type: {product_type_str}")
+
+
+def create_test_details() -> InstrumentDetails:
+    return InstrumentDetails(
+        "20250201",
+        "TEST",
+        "TEST",
+        ProductType.FUTURE,
+        "USD",
+        0,
+        "20250701"
+    )

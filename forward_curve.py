@@ -1,4 +1,5 @@
 from datetime import datetime, date
+from typing import List
 
 import numpy as np
 from scipy.interpolate import CubicSpline, interp1d
@@ -26,18 +27,21 @@ class ForwardCurve:
     def create_from(curve_key: CurveKey,
                     day_count_convention: DayCountConvention,
                     interpolation_strategy: InterpolationStrategy,
-                    future_in_same_product: [InstrumentDetails]):
+                    future_in_same_product: List[InstrumentDetails]):
+        sorted_details: List[InstrumentDetails] = list(
+            sorted(future_in_same_product, key=lambda item: item.maturity_date)
+        )
         time_to_maturity: [float] = []
         prices: [float] = []
-        for detail in future_in_same_product:
+        for detail in sorted_details:
             time_to_maturity.append((detail.maturity_date - detail.settlement_date).days / day_count_convention.value)
             prices.append(detail.settlement_price)
 
         return ForwardCurve(curve_key, np.array(time_to_maturity), np.array(prices), interpolation_strategy, day_count_convention)
 
-    def get_price_for_date(self, maturity_date: date) -> float:
-        time_to_maturity: float = (maturity_date - datetime.now()).days / self.day_count_convention.value
-        return self.get_price(time_to_maturity)
+
+    def get_time_to_maturity(self, maturity_date: date, calculation_date: date):
+        return (maturity_date - calculation_date).days / self.day_count_convention.value
 
     def get_price(self, time_to_maturity: float) -> float:
         return self.curve(time_to_maturity)
