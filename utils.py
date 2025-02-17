@@ -9,34 +9,22 @@ def read_csv_and_map_to_objects(csv_file_path) -> [InstrumentDetails]:
         reader = csv.DictReader(file)
         for row in reader:
             instrument = InstrumentDetails(
-                date=row["date"],
-                exchange=row["exchange"],
-                product=row["product"],
-                product_type=map_product_type(row["product_type"]),
-                currency=row["currency"],
-                settlement_price=float(row["settlement_price"]),
-                maturity_date=row["maturity_date"]
+                date=row["Date"],
+                exchange=row["Exchange"],
+                name=row["Name"],
+                product=row["Product"],
+                product_type=map_product_type(row["ProductType"]),
+                underlying=row["Underlying"],
+                currency=row["Currency"],
+                settlement_price=float(row["SettlementPrice"]),
+                maturity_date=row["MaturityDate"]
             )
-            instrument_details.append(instrument)
+            if instrument.product_type == ProductType.FUTURE:
+                instrument_details.append(instrument)
     return instrument_details
 
 
 def map_product_type(product_type_str) -> ProductType:
-    if product_type_str.upper() == "FUTURES":
+    if product_type_str.upper() == "FUT":
         return ProductType.FUTURE
-    elif product_type_str.upper() == "OPTIONS":
-        return ProductType.OPTION
-    else:
-        raise ValueError(f"Unknown product type: {product_type_str}")
-
-
-def create_test_details() -> InstrumentDetails:
-    return InstrumentDetails(
-        "20250201",
-        "TEST",
-        "TEST",
-        ProductType.FUTURE,
-        "USD",
-        0,
-        "20250701"
-    )
+    return ProductType.OTHER

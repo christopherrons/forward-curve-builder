@@ -6,20 +6,21 @@ from typing import List
 
 
 class CurveKey:
-    def __init__(self, settlement_date: date, product: str):
+    def __init__(self, settlement_date: date, exchange: str, product: str):
         self.settlement_date = settlement_date
         self.product = product
+        self.exchange = exchange
 
     def __hash__(self):
-        return hash((self.settlement_date, self.product))
+        return hash((self.settlement_date, self.exchange, self.product))
 
     def __eq__(self, other):
         if isinstance(other, CurveKey):
-            return self.settlement_date == other.settlement_date and self.product == other.product
+            return self.settlement_date == other.settlement_date and self.exchange == other.exchange and self.product == other.product
         return False
 
     def __str__(self):
-        return f"{self.settlement_date}_{self.product}"
+        return f"{self.settlement_date}_{self.exchange}_{self.product}"
 
 
 class ForwardCurvePrice:
@@ -70,23 +71,26 @@ class InterpolationStrategy(Enum):
 class ProductType(Enum):
     FUTURE = "future"
     OPTION = "option"
+    OTHER = "other"
 
 
 class InstrumentDetails:
-    def __init__(self,
-                 date: str,
-                 exchange: str,
-                 product: str,
-                 product_type: ProductType,
-                 currency: str,
-                 settlement_price: float,
-                 maturity_date: str):
-        self.settlement_date = datetime.strptime(date, "%Y%m%d").date()
+    def __init__(self, date, exchange, name, product, product_type, underlying, currency, settlement_price, maturity_date):
+        self.settlement_date = self.parse_valid_date(date)
         self.exchange = exchange
+        self.name = name.replace(" ", "-")
         self.product = product
         self.product_type = product_type
+        self.underlying = underlying
         self.currency = currency
         self.settlement_price = settlement_price
-        self.maturity_date = datetime.strptime(maturity_date, "%Y%m%d").date()
-        self.forward_curve_key = CurveKey(self.settlement_date, self.product)
-        self.instrument_id = f"{product}_{product_type.value}_{maturity_date}"
+        self.maturity_date = self.parse_valid_date(maturity_date)
+        self.forward_curve_key = CurveKey(self.settlement_date, self.exchange, self.product)
+        self.instrument_id = f"{self.name}_{self.product}_{self.product_type.value}_{self.maturity_date}".lower()
+
+    @staticmethod
+    def parse_valid_date(date_str):
+        """Ensures 'YYYYMM00' dates are corrected to 'YYYYMM01' before parsing."""
+        if date_str[-2:] == "00":
+            date_str = date_str[:-2] + "01"
+        return datetime.strptime(date_str, "%Y%m%d").date()
